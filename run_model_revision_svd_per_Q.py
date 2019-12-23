@@ -10,7 +10,6 @@ import numpy as np
 import os, sys
 import preprocess_footnotes_data as pfd
 import random as rn
-from sklearn.preprocessing import StandardScaler
 import keras.backend.tensorflow_backend as K
 import keras
 from keras import optimizers
@@ -31,12 +30,6 @@ import glob
 from multiprocessing import Pool
 import static_test as st
 
-global n_comp
-n_comp = 8
-bound = 100  # 200(100,8), 100(100, 8), 50(100,8), 1(100,8)
-# memo n_comp:  8 loss: mean_squared_error, bound: 100  성공! mape와 mspe가 하락
-# memo n_comp:  100 loss: mean_squared_error, bound: 200  #rmse만 유의하게 감소
-
 
 class CustomHistory(keras.callbacks.Callback):
     def init(self):
@@ -53,11 +46,11 @@ def adjusted_rmse(y_true, y_pred):  # 사실 2009년엔 없는 단어여서 그�
     return np.square(((y_true - y_pred)/y_true)).mean() * 100
 
 
-def Mape(y_true, y_pred):  # 0에 가까운 값에 약해(규모에 민감)서 사실 그닥 성능은 좋지 않아보인다.
+def Mape(y_true, y_pred):  # 0에 가까운 값에 약해(규모에 민감)서 사실 그닥 성능은 좋지 않아보인다
     return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
 
 
-def Mpe(y_true, y_pred):  # underperformance 인지 overperformance 인지 판단 할 수 있다는 것입니다.
+def Mpe(y_true, y_pred):  # underperformance 인지 overperformance 인지 판단 할 수 있다
     return np.mean((y_true - y_pred) / y_true) * 100
 
 
@@ -414,6 +407,7 @@ def mlp_adjust(df, dep, main_ind_var, ind_var_at_paper, adjust, qual):
 
 def tfidf_svd(tfidf_matrix, df, ind_var_at_paper, dep):  # index 포함된 데이터 프레임
     # print('tfidf_matrix:', tfidf_matrix.shape)
+    n_comp = 8
     tsvd = TruncatedSVD(n_components=n_comp)
     tfidf_matrix_reduced = tsvd.fit_transform(tfidf_matrix[list(df['index']), :])
     # print('tfidf_matrix_reduced: ', tfidf_matrix_reduced.shape[0])
@@ -585,8 +579,37 @@ def df_list_to_excel(df_list, file_name):
             df_list[i].to_excel(writer, sheet_name='try'+str(i))
 
 
+
+def add_one_hot(df, col_name):
+    df = pd.concat([df, pd.get_dummies(df[col_name], dummy_na=False, prefix=col_name)], axis=1)
+    # df.drop([col_name], axis=1, inplace=True)
+    return df
+
+
+def add_one_hot_with_ind_cd(df):
+    sector_detailed = pd.read_excel('한국표준산업분류(10차)_표.xlsx', sheet_name='Sheet2', dtype=object)
+    # print(sector_detailed.info())
+    # df = matched_quanti_and_qual_data.copy()  # FOR TEST
+    df['ind_cd'] = df['ind_cd'].replace(np.nan, "")
+
+    for index, row in sector_detailed.iterrows():
+        print(row['sector2'])
+        tmp = df[df.ind_cd.str.contains('^' + str(row['range']))]  # 앞의 두자리만 알면 중분류를 알 수 있다.
+        if tmp.empty:
+            continue
+        print(tmp.shape)
+        for idx, r in tmp.iterrows():
+            # df.loc[idx, 'ind'] = row['sector']  # 대분류
+            df.loc[idx, 'ind'] = row['sector2']  # 중분류
+        # try:
+        # except Exception as e:
+        #     print(e)
+    df = add_one_hot(df, 'ind')
+    df.drop(['ind_cd'], axis=1, inplace=True)
+    return df
+
+
 if __name__ == '__main__':  # 시간내로 하기 위해 멀티프로세싱 적극 활용 요함.
-    print('memo n_comp: ', n_comp, 'loss: mean_squared_error, bound:', bound)
     path_dir = os.getcwd()
     ind_var_list = ['M000901012_재고자산(천원)', 'M000901006_매출채권(천원)', 'M_CAPEX', 'M000904007_매출총이익(천원)',
                     # 'M000904017_판매비와관리비(천원)', 'ETR', 'LF_salesDivEmp'  # 기존 EPS 계산시 사용된 수치들.
@@ -608,67 +631,67 @@ if __name__ == '__main__':  # 시간내로 하기 위해 멀티프로세싱 적�
     # main_ind_var = 'diff_y_cos_per_ind'  # 산업 평균 대비 연 cos거리
     ## option ##
     quanti_qual_matched_file_name = 'revisionAll_quanti_qaul_komoran_dnn.pkl'  # 정성 데이터 포함시킨 데이터.
-    """      
-        matched_quanti_and_qual_data = pd.read_pickle('./merged_FnGuide/processing_'+quanti_qual_matched_file_name)
+    """      """
+    matched_quanti_and_qual_data = pd.read_pickle('./merged_FnGuide/processing_'+quanti_qual_matched_file_name)
 
-        matched_quanti_and_qual_data['회계년'] = matched_quanti_and_qual_data['회계년'].astype('int')
-        matched_quanti_and_qual_data = matched_quanti_and_qual_data[(matched_quanti_and_qual_data['회계년']) < 2019]
+    matched_quanti_and_qual_data['회계년'] = matched_quanti_and_qual_data['회계년'].astype('int')
+    matched_quanti_and_qual_data = matched_quanti_and_qual_data[(matched_quanti_and_qual_data['회계년']) < 2019]
 
-        ## 산업코드 부여 안된 빈 공간 미리 처리.
-        crp_ind_match = pd.read_excel('C:\\Users\\lab515\\PycharmProjects\\eps_predict\\crp_ind_match.xlsx'
-                                       , dtype=object, sheet_name='Sheet1')  # 미리 종속변수까지 붙여놓아 번거로운 작업을 할 필요는 없음.
-        cd_list = list(matched_quanti_and_qual_data['Symbol'].unique())
-        for cd in cd_list:
-            # cd = 'A005930'  # for test
-            try:
-                matched_quanti_and_qual_data.loc[(matched_quanti_and_qual_data['Symbol'] == cd), 'ind_cd'] = crp_ind_match.loc[crp_ind_match['Symbol'] == cd, 'ind_cd'].values[0]
-            except Exception as e:
-                # print(cd)
-                # print(e)
-                pass
+    ## 산업코드 부여 안된 빈 공간 미리 처리.
+    crp_ind_match = pd.read_excel('C:\\Users\\lab515\\PycharmProjects\\eps_predict\\crp_ind_match.xlsx'
+                                  , dtype=object, sheet_name='Sheet1')  # 미리 종속변수까지 붙여놓아 번거로운 작업을 할 필요는 없음.
+    cd_list = list(matched_quanti_and_qual_data['Symbol'].unique())
+    for cd in cd_list:
+        # cd = 'A005930'  # for test
+        try:
+            matched_quanti_and_qual_data.loc[(matched_quanti_and_qual_data['Symbol'] == cd), 'ind_cd'] = crp_ind_match.loc[crp_ind_match['Symbol'] == cd, 'ind_cd'].values[0]
+        except Exception as e:
+            # print(cd)
+            # print(e)
+            pass
 
-        columns = ['crp_cd', 'crp_nm', 'rpt_nm', 'foot_note', 'rcp_dt', 't_minus_index', 't_minus_year_index',
-                   'Name', '결산월']  # Symbol, 회계년, 주기, ind_cd는 차후 식별등을 위해 일단 남긴다.  # 'ind','crp_cls'나중에 지운다.
+    columns = ['crp_cd', 'crp_nm', 'rpt_nm', 'foot_note', 'rcp_dt', 't_minus_index', 't_minus_year_index',
+               'Name', '결산월']  # Symbol, 회계년, 주기, ind_cd는 차후 식별등을 위해 일단 남긴다.  # 'ind','crp_cls'나중에 지운다.
 
-        matched_quanti_and_qual_data.drop(columns, inplace=True, axis=1)
+    matched_quanti_and_qual_data.drop(columns, inplace=True, axis=1)
 
-        matched_quanti_and_qual_data['t_1q_cos_dist'] = matched_quanti_and_qual_data['t_1q_cos_dist'].replace("", np.nan)
-        matched_quanti_and_qual_data['t_1q_cos_dist'] = matched_quanti_and_qual_data['t_1q_cos_dist'].astype('float')
+    matched_quanti_and_qual_data['t_1q_cos_dist'] = matched_quanti_and_qual_data['t_1q_cos_dist'].replace("", np.nan)
+    matched_quanti_and_qual_data['t_1q_cos_dist'] = matched_quanti_and_qual_data['t_1q_cos_dist'].astype('float')
 
-        matched_quanti_and_qual_data['t_1y_cos_dist'] = matched_quanti_and_qual_data['t_1y_cos_dist'].replace("", np.nan)
-        matched_quanti_and_qual_data['t_1y_cos_dist'] = matched_quanti_and_qual_data['t_1y_cos_dist'].astype('float')
+    matched_quanti_and_qual_data['t_1y_cos_dist'] = matched_quanti_and_qual_data['t_1y_cos_dist'].replace("", np.nan)
+    matched_quanti_and_qual_data['t_1y_cos_dist'] = matched_quanti_and_qual_data['t_1y_cos_dist'].astype('float')
 
-        matched_quanti_and_qual_data = add_one_hot(matched_quanti_and_qual_data, '주기')
-        matched_quanti_and_qual_data = add_one_hot(matched_quanti_and_qual_data, 'crp_cls')
-        matched_quanti_and_qual_data = add_one_hot_with_ind_cd(matched_quanti_and_qual_data)  # 중분류 산업코드 사용. 대분류 제조업은
+    matched_quanti_and_qual_data = add_one_hot(matched_quanti_and_qual_data, '주기')
+    matched_quanti_and_qual_data = add_one_hot(matched_quanti_and_qual_data, 'crp_cls')
+    matched_quanti_and_qual_data = add_one_hot_with_ind_cd(matched_quanti_and_qual_data)  # 중분류 산업코드 사용. 대분류 제조업은
 
-        ind_cosine_dict = {}
-        for ind_col_name in list(matched_quanti_and_qual_data.columns[matched_quanti_and_qual_data.columns.str.contains('^ind')]):
-            print(ind_col_name)
-            if ind_col_name == 'ind':
-                continue
-            for year in range(2013, 2019):
-                for quarter in ['주기_1Q', '주기_2Q', '주기_3Q', '주기_4Q']:
-                    avg_q_dist = matched_quanti_and_qual_data[(matched_quanti_and_qual_data['회계년'] == year) & (matched_quanti_and_qual_data[ind_col_name] == 1) & (matched_quanti_and_qual_data[quarter] == 1)]['t_1q_cos_dist'].mean(skipna=True)
-                    avg_y_dist = matched_quanti_and_qual_data[(matched_quanti_and_qual_data['회계년'] == year) & (matched_quanti_and_qual_data[ind_col_name] == 1) & (matched_quanti_and_qual_data[quarter] == 1)]['t_1y_cos_dist'].mean(skipna=True)
-                    ind_cosine_dict[ind_col_name+'$'+str(year)+'$'+quarter] = [avg_q_dist, avg_y_dist]
-        # matched_quanti_and_qual_data.drop(['q_cos_mean', 'y_cos_mean', 'diff_q_cos_per_ind', 'diff_y_cos_per_ind'], inplace=True, axis=1)
-        # cols = matched_quanti_and_qual_data.columns[matched_quanti_and_qual_data.columns.str.contains('^q_cos_ind')]
-        # matched_quanti_and_qual_data.drop(cols, inplace=True, axis=1)
-        # cols = matched_quanti_and_qual_data.columns[matched_quanti_and_qual_data.columns.str.contains('^y_cos_ind')]
-        # matched_quanti_and_qual_data.drop(cols, inplace=True, axis=1)
+    ind_cosine_dict = {}
+    for ind_col_name in list(matched_quanti_and_qual_data.columns[matched_quanti_and_qual_data.columns.str.contains('^ind')]):
+        print(ind_col_name)
+        if ind_col_name == 'ind':
+            continue
+        for year in range(2013, 2019):
+            for quarter in ['주기_1Q', '주기_2Q', '주기_3Q', '주기_4Q']:
+                avg_q_dist = matched_quanti_and_qual_data[(matched_quanti_and_qual_data['회계년'] == year) & (matched_quanti_and_qual_data[ind_col_name] == 1) & (matched_quanti_and_qual_data[quarter] == 1)]['t_1q_cos_dist'].mean(skipna=True)
+                avg_y_dist = matched_quanti_and_qual_data[(matched_quanti_and_qual_data['회계년'] == year) & (matched_quanti_and_qual_data[ind_col_name] == 1) & (matched_quanti_and_qual_data[quarter] == 1)]['t_1y_cos_dist'].mean(skipna=True)
+                ind_cosine_dict[ind_col_name+'$'+str(year)+'$'+quarter] = [avg_q_dist, avg_y_dist]
+    # matched_quanti_and_qual_data.drop(['q_cos_mean', 'y_cos_mean', 'diff_q_cos_per_ind', 'diff_y_cos_per_ind'], inplace=True, axis=1)
+    # cols = matched_quanti_and_qual_data.columns[matched_quanti_and_qual_data.columns.str.contains('^q_cos_ind')]
+    # matched_quanti_and_qual_data.drop(cols, inplace=True, axis=1)
+    # cols = matched_quanti_and_qual_data.columns[matched_quanti_and_qual_data.columns.str.contains('^y_cos_ind')]
+    # matched_quanti_and_qual_data.drop(cols, inplace=True, axis=1)
 
-        for key in ind_cosine_dict:
-            # key = 'ind_항공 운송업'  # for test
-            matched_quanti_and_qual_data.loc[(matched_quanti_and_qual_data['회계년'] == int(key.split('$')[1])) & (matched_quanti_and_qual_data[key.split('$')[0]] == 1) & (matched_quanti_and_qual_data[key.split('$')[2]] == 1), "q_cos_mean"] = ind_cosine_dict[key][0]
-            matched_quanti_and_qual_data.loc[(matched_quanti_and_qual_data['회계년'] == int(key.split('$')[1])) & (matched_quanti_and_qual_data[key.split('$')[0]] == 1) & (matched_quanti_and_qual_data[key.split('$')[2]] == 1), "y_cos_mean"] = ind_cosine_dict[key][1]
-        # matched_quanti_and_qual_data.dropna(inplace=True)
-        matched_quanti_and_qual_data['diff_q_cos_per_ind'] = matched_quanti_and_qual_data['t_1q_cos_dist'] - matched_quanti_and_qual_data['q_cos_mean']
-        matched_quanti_and_qual_data['diff_y_cos_per_ind'] = matched_quanti_and_qual_data['t_1y_cos_dist'] - matched_quanti_and_qual_data['y_cos_mean']
+    for key in ind_cosine_dict:
+        # key = 'ind_항공 운송업'  # for test
+        matched_quanti_and_qual_data.loc[(matched_quanti_and_qual_data['회계년'] == int(key.split('$')[1])) & (matched_quanti_and_qual_data[key.split('$')[0]] == 1) & (matched_quanti_and_qual_data[key.split('$')[2]] == 1), "q_cos_mean"] = ind_cosine_dict[key][0]
+        matched_quanti_and_qual_data.loc[(matched_quanti_and_qual_data['회계년'] == int(key.split('$')[1])) & (matched_quanti_and_qual_data[key.split('$')[0]] == 1) & (matched_quanti_and_qual_data[key.split('$')[2]] == 1), "y_cos_mean"] = ind_cosine_dict[key][1]
+    # matched_quanti_and_qual_data.dropna(inplace=True)
+    matched_quanti_and_qual_data['diff_q_cos_per_ind'] = matched_quanti_and_qual_data['t_1q_cos_dist'] - matched_quanti_and_qual_data['q_cos_mean']
+    matched_quanti_and_qual_data['diff_y_cos_per_ind'] = matched_quanti_and_qual_data['t_1y_cos_dist'] - matched_quanti_and_qual_data['y_cos_mean']
 
-        matched_quanti_and_qual_data.to_pickle(path_dir + '/merged_FnGuide/diffPerInd_'+ quanti_qual_matched_file_name)
-        """
-    """  
+    matched_quanti_and_qual_data.to_pickle(path_dir + '/merged_FnGuide/diffPerInd_'+ quanti_qual_matched_file_name)
+
+    """      """
     # matched_quanti_and_qual_data.drop(['t_1y_cos_dist'], inplace=True, axis=1)
     # matched_quanti_and_qual_data.drop(['t_1q_cos_dist'], inplace=True, axis=1)
     # matched_quanti_and_qual_data = matched_quanti_and_qual_data[matched_quanti_and_qual_data.t_1q_cos_dist != ""]
@@ -687,8 +710,8 @@ if __name__ == '__main__':  # 시간내로 하기 위해 멀티프로세싱 적�
     print(matched_quanti_and_qual_data_t4Flatten.shape[0])
     # matched_quanti_and_qual_data_t4Flatten.reset_index(drop=True, inplace=True)
     # result_df.dropna(inplace=True)
-    """
-    """    
+
+    """        """
     columns = ['Symbol', '회계년', '주기', '주기_1Q', '주기_2Q', '주기_3Q', '주기_4Q',
                # 'M000901012_재고자산(천원)', 'M000901006_매출채권(천원)', 'M_CAPEX', 'M000904007_매출총이익(천원)',
                # 'M000904017_판매비와관리비(천원)', 'M000911020_유효세율(%)', 'LF_salesDivEmp'  # 기존 EPS 계산시 사용된 수치들.
@@ -767,8 +790,8 @@ if __name__ == '__main__':  # 시간내로 하기 위해 멀티프로세싱 적�
     matched_quanti_and_qual_data.to_pickle(path_dir + '/merged_FnGuide/t4_'+quanti_qual_matched_file_name)
     
     
-    """
-    """        
+
+    """            """
     matched_quanti_and_qual_data = pd.read_pickle('./merged_FnGuide/t4_'+quanti_qual_matched_file_name)
     matched_quanti_and_qual_data.replace(to_replace='N/A(IFRS)', value=np.nan, inplace=True)
 
@@ -818,7 +841,7 @@ if __name__ == '__main__':  # 시간내로 하기 위해 멀티프로세싱 적�
     print(matched_quanti_and_qual_data_fin.shape)
     # matched_quanti_and_qual_data_fin.dropna(subset=[main_ind_var], inplace=True)
     matched_quanti_and_qual_data_fin.sort_values(['회계년', '주기'], ascending=['True', 'True'], inplace=True)
-    """
+
 
     add_ind_var_list = ind_var_list.copy()
     add_ind_var_list.append(eps_version)
@@ -874,9 +897,9 @@ if __name__ == '__main__':  # 시간내로 하기 위해 멀티프로세싱 적�
 
     d = df.describe()
     # print(d)
-    # bound = 100  # 5000(no), 3000(no), 1000, 500(no), 100, 1
+    bound = 100
     df = df[
-        (df['t1_M000911020_유효세율(%)'] > -bound)  # 유효세율은 최대 50,000 (여기서 100 나눔)보다 작다.
+        (df['t1_M000911020_유효세율(%)'] > -bound)
         & (df['t1_M000911020_유효세율(%)'] < bound)
         & (df['t2_M000911020_유효세율(%)'] > -bound)
         & (df['t2_M000911020_유효세율(%)'] < bound)
@@ -955,6 +978,7 @@ if __name__ == '__main__':  # 시간내로 하기 위해 멀티프로세싱 적�
     indVar_placebo = identifier.copy()
     indVar_placebo.extend(ind_var_at_paper)
     # indVar_withFootnote.append(main_ind_var)  # footnotes
+    n_comp = 8
     indVar_placebo.extend(range(n_comp))  # footnotes
     # indVar_placebo.append('index')
     indVar_placebo.append(dep)
