@@ -629,6 +629,8 @@ if __name__ == '__main__':  # 시간내로 하기 위해 멀티프로세싱 적�
     # main_ind_var = 't_1y_cos_dist'
     # main_ind_var = 'diff_q_cos_per_ind'  # 산업 평균 대비 분기 cos거리
     # main_ind_var = 'diff_y_cos_per_ind'  # 산업 평균 대비 연 cos거리
+    ind_var_list_for_rolling = ind_var_list.copy()
+    ind_var_list_for_rolling.apppend(dep)
     ## option ##
     quanti_qual_matched_file_name = 'revisionAll_quanti_qaul_komoran_dnn.pkl'  # 정성 데이터 포함시킨 데이터.
     """      """
