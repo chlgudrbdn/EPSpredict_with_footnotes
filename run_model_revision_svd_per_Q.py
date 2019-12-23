@@ -579,7 +579,6 @@ def df_list_to_excel(df_list, file_name):
             df_list[i].to_excel(writer, sheet_name='try'+str(i))
 
 
-
 def add_one_hot(df, col_name):
     df = pd.concat([df, pd.get_dummies(df[col_name], dummy_na=False, prefix=col_name)], axis=1)
     # df.drop([col_name], axis=1, inplace=True)
@@ -640,8 +639,7 @@ if __name__ == '__main__':  # 시간내로 하기 위해 멀티프로세싱 적�
     matched_quanti_and_qual_data = matched_quanti_and_qual_data[(matched_quanti_and_qual_data['회계년']) < 2019]
 
     ## 산업코드 부여 안된 빈 공간 미리 처리.
-    crp_ind_match = pd.read_excel('C:\\Users\\lab515\\PycharmProjects\\eps_predict\\crp_ind_match.xlsx'
-                                  , dtype=object, sheet_name='Sheet1')  # 미리 종속변수까지 붙여놓아 번거로운 작업을 할 필요는 없음.
+    crp_ind_match = pd.read_excel('crp_ind_match.xlsx', dtype=object, sheet_name='Sheet1')  # 미리 종속변수까지 붙여놓아 번거로운 작업을 할 필요는 없음.
     cd_list = list(matched_quanti_and_qual_data['Symbol'].unique())
     for cd in cd_list:
         # cd = 'A005930'  # for test
